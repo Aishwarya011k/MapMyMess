@@ -32,6 +32,8 @@ Coming soon!
 | Database    | MongoDB, Mongoose              |
 | NLP Layer   | OpenAI API (optional), Natural or spaCy |
 | Styling     | Tailwind CSS / Chakra UI       |
+| Deployment  | AWS                            |
+
 
 ---
 
