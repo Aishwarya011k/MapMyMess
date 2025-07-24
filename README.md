@@ -1,4 +1,4 @@
-# 🧠 MindMap from Mess
+# 🧠 MapMyMess
 
 > _Transform messy, unstructured notes into a clear, interactive mind map using AI and NLP._
 
