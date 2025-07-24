@@ -1,0 +1,63 @@
+@import "tailwindcss";
+.feature-badge {
+  background: rgba(60, 50, 100, 0.7);
+  border: 1px solid #393053;
+  border-radius: 2rem;
+  padding: 0.5rem 1.2rem;
+  font-size: 1rem;
+  color: #fff;
+  box-shadow: 0 2px 8px 0 rgba(60, 50, 100, 0.15);
+}
+.input-section {
+  width: 100%;
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+.notes-input {
+  width: 100%;
+  min-height: 120px;
+  background: #232144;
+  border: 1.5px solid #393053;
+  border-radius: 1rem;
+  color: #fff;
+  font-size: 1.1rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  resize: vertical;
+  outline: none;
+  transition: border 0.2s;
+}
+.notes-input:focus {
+  border: 1.5px solid #5DE0E6;
+}
+/* ...existing code... */
+.mindmap-section {
+  width: 100%;
+  max-width: 800px;
+  min-height: 220px;
+  background: rgba(35, 33, 68, 0.7);
+  border-radius: 1.2rem;
+  margin-bottom: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 16px 0 rgba(60, 50, 100, 0.10);
+}
+.mindmap-placeholder {
+  color: #A3A3C2;
+  font-size: 1.2rem;
+  text-align: center;
+}
+.footer {
+  margin-bottom: 1.5rem;
+  color: #A3A3C2;
+  font-size: 1rem;
+}
+.footer a {
+  color: #5DE0E6;
+  text-decoration: none;
+  transition: color 0.2s;
+}
