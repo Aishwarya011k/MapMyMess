@@ -1,4 +1,49 @@
+
 @import "tailwindcss";
+/* Custom Animations for MapMyMess */
+.animate-fade-in {
+  animation: fadeIn 1s ease;
+}
+.animate-bounce {
+  animation: bounce 1s infinite;
+}
+.animate-pulse {
+  animation: pulse 2s infinite;
+}
+.animate-float {
+  animation: float 3s infinite alternate;
+}
+.animate-move-x {
+  animation: moveX 2s infinite alternate;
+}
+.animate-move-y {
+  animation: moveY 2s infinite alternate;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+@keyframes float {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-12px); }
+}
+@keyframes moveX {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(18px); }
+}
+@keyframes moveY {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(18px); }
+}
+
 .feature-badge {
   background: rgba(60, 50, 100, 0.7);
   border: 1px solid #393053;
