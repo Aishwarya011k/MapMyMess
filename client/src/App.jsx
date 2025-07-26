@@ -20,8 +20,152 @@ import './index.css';
 // @keyframes moveY { 0% { transform: translateY(0); } 100% { transform: translateY(18px); } }
 
 function App() {
+  const [savedMaps, setSavedMaps] = React.useState([]);
+
+  // Save mind map securely
+  const handleSaveMindMap = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('http://localhost:5000/api/secure-mindmaps', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ rawText: inputText, nodes: mindMap.nodes, edges: mindMap.edges })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Save failed');
+      alert('Mind map saved!');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch saved mind maps for dashboard
+  const fetchSavedMaps = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('http://localhost:5000/api/secure-mindmaps', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Fetch failed');
+      setSavedMaps(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    if (isLoggedIn && section === 'dashboard') {
+      fetchSavedMaps();
+    }
+    // eslint-disable-next-line
+  }, [isLoggedIn, section]);
+  const [inputText, setInputText] = React.useState("");
+  const [mindMap, setMindMap] = React.useState(null);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState("");
   const [section, setSection] = React.useState('home');
-  const [isLoggedIn, setIsLoggedIn] = React.useState(false);
+  const [isLoggedIn, setIsLoggedIn] = React.useState(!!localStorage.getItem('token'));
+  const [user, setUser] = React.useState(() => {
+    const u = localStorage.getItem('user');
+    return u ? JSON.parse(u) : null;
+  });
+  const [authLoading, setAuthLoading] = React.useState(false);
+  const [authError, setAuthError] = React.useState("");
+  const [signupData, setSignupData] = React.useState({ name: '', email: '', password: '' });
+  const [signinData, setSigninData] = React.useState({ email: '', password: '' });
+
+  // Signup handler
+  const handleSignup = async (e) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const res = await fetch('http://localhost:5000/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(signupData)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Signup failed');
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      setUser(data.user);
+      setIsLoggedIn(true);
+      setSection('dashboard');
+    } catch (err) {
+      setAuthError(err.message);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // Signin handler
+  const handleSignin = async (e) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const res = await fetch('http://localhost:5000/api/auth/signin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(signinData)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Signin failed');
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      setUser(data.user);
+      setIsLoggedIn(true);
+      setSection('dashboard');
+    } catch (err) {
+      setAuthError(err.message);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // Logout handler
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setIsLoggedIn(false);
+    setUser(null);
+    setSection('home');
+  };
+
+  // Function to handle mind map generation
+  const handleGenerate = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    setMindMap(null);
+    try {
+      const res = await fetch("http://localhost:5000/api/mindmaps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rawText: inputText })
+      });
+      if (!res.ok) throw new Error("Failed to generate mind map");
+      const data = await res.json();
+      setMindMap(data);
+    } catch (err) {
+      setError(err.message || "Error generating mind map");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Section content
   const renderSection = () => {
@@ -94,30 +238,63 @@ function App() {
             <div className="flex-1 flex flex-col gap-6">
               <h2 className="text-3xl font-extrabold mb-2 tracking-tight">Try MapMyMess Live</h2>
               <p className="text-gray-300 mb-2">Paste your messy notes below and see the magic!</p>
-              <textarea className="w-full min-h-[120px] bg-[#232144] border-2 border-cyan-400 rounded-xl text-white text-base p-4 mb-4 focus:outline-none focus:border-pink-400 resize-y transition-all duration-300" placeholder="Paste your messy notes here..." />
-              <button className="bg-gradient-to-r from-cyan-400 to-pink-400 text-white font-semibold px-8 py-3 rounded-full shadow hover:from-pink-400 hover:to-cyan-400 transition-all duration-300 animate-bounce">Generate Mind Map</button>
+              {/* Only one textarea and button for input and generation */}
+              <textarea
+                className="w-full min-h-[120px] bg-[#232144] border-2 border-cyan-400 rounded-xl text-white text-base p-4 mb-4 focus:outline-none focus:border-pink-400 resize-y transition-all duration-300"
+                placeholder="Paste your messy notes here..."              
+               
+                value={inputText}
+                onChange={e => setInputText(e.target.value)}
+              />
+              <button
+                className="bg-gradient-to-r from-cyan-400 to-pink-400 text-white font-semibold px-8 py-3 rounded-full shadow hover:from-pink-400 hover:to-cyan-400 transition-all duration-300 animate-bounce"
+                onClick={handleGenerate}
+                disabled={loading}
+              >
+                {loading ? 'Generating...' : 'Generate Mind Map'}
+              </button>
+              <textarea
+                className="w-full min-h-[120px] bg-[#232144] border-2 border-cyan-400 rounded-xl text-white text-base p-4 mb-4 focus:outline-none focus:border-pink-400 resize-y transition-all duration-300"
+                placeholder="Paste your messy notes here..."
+                value={inputText}
+                onChange={e => setInputText(e.target.value)}
+              />
+              <button
+                className="bg-gradient-to-r from-cyan-400 to-pink-400 text-white font-semibold px-8 py-3 rounded-full shadow hover:from-pink-400 hover:to-cyan-400 transition-all duration-300 animate-bounce"
+                onClick={handleGenerate}
+                disabled={loading}
+              >
+                {loading ? 'Generating...' : 'Generate Mind Map'}
+              </button>
             </div>
-            {/* Right: Mind Map Visualization (animated placeholder) */}
+            {/* Right: Mind Map Visualization (real data) */}
             <div className="flex-1 flex flex-col items-center justify-center">
-              <div className="relative w-full max-w-md h-72 bg-[#232144] rounded-2xl shadow-lg flex items-center justify-center overflow-hidden animate-float">
-                {/* Animated mind map nodes */}
-                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-                  <div className="w-20 h-20 bg-cyan-400/80 rounded-full flex items-center justify-center text-2xl font-bold text-[#18122B] animate-pulse">Main</div>
-                </div>
-                <div className="absolute left-12 top-8 animate-move-x">
-                  <div className="w-12 h-12 bg-pink-400/80 rounded-full flex items-center justify-center text-lg font-bold text-white">Idea</div>
-                </div>
-                <div className="absolute right-12 top-16 animate-move-y">
-                  <div className="w-12 h-12 bg-green-400/80 rounded-full flex items-center justify-center text-lg font-bold text-white">Topic</div>
-                </div>
-                <div className="absolute left-20 bottom-10 animate-move-x">
-                  <div className="w-10 h-10 bg-cyan-400/60 rounded-full flex items-center justify-center text-base font-bold text-[#18122B]">Sub</div>
-                </div>
-                <div className="absolute right-20 bottom-8 animate-move-y">
-                  <div className="w-10 h-10 bg-pink-400/60 rounded-full flex items-center justify-center text-base font-bold text-white">Note</div>
-                </div>
+              <div className="relative w-full max-w-md min-h-72 bg-[#232144] rounded-2xl shadow-lg flex flex-col items-center justify-center overflow-auto animate-float p-4">
+                {error && <div className="text-red-400 mb-2">{error}</div>}
+                {mindMap && mindMap.nodes && mindMap.nodes.length > 0 ? (
+                  <>
+                    <div className="mb-4 text-cyan-300 font-bold">Nodes:</div>
+                    <ul className="mb-4">
+                      {mindMap.nodes.map((node, idx) => (
+                        <li key={idx} className="text-white">{node.data.label}</li>
+                      ))}
+                    </ul>
+                    <div className="mb-2 text-pink-300 font-bold">Edges:</div>
+                    <ul>
+                      {mindMap.edges.map((edge, idx) => (
+                        <li key={idx} className="text-gray-300">{edge.data.source} → {edge.data.target}</li>
+                      ))}
+                    </ul>
+                    {isLoggedIn && (
+                      <button className="mt-4 bg-cyan-400 text-[#18122B] px-6 py-2 rounded-full font-semibold hover:bg-cyan-500 transition" onClick={handleSaveMindMap} disabled={loading}>
+                        {loading ? 'Saving...' : 'Save Mind Map'}
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <span className="mt-4 text-gray-400 text-sm">{loading ? 'Generating mind map...' : '(No mind map yet)'}</span>
+                )}
               </div>
-              <span className="mt-4 text-gray-400 text-sm">(Animated demo — real mind map coming soon!)</span>
             </div>
           </section>
         );
@@ -149,22 +326,15 @@ function App() {
             <div className="bg-[#232144] rounded-2xl shadow-lg p-8 mb-12">
               <h3 className="text-2xl font-bold text-cyan-400 mb-6">Your Mind Maps</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="bg-[#18122B] rounded-xl p-6 shadow flex flex-col gap-2 animate-float">
-                  <span className="font-semibold text-cyan-400 text-lg">Project Brainstorm</span>
-                  <span className="text-xs text-gray-400">Created: 2025-07-24</span>
-                  <div className="flex gap-2 mt-2">
-                    <button className="bg-cyan-400 text-[#18122B] px-4 py-1 rounded-full text-sm">View</button>
-                    <button className="bg-pink-400 text-white px-4 py-1 rounded-full text-sm">Delete</button>
+                {savedMaps.map((map, idx) => (
+                  <div key={map._id || idx} className="bg-[#18122B] rounded-xl p-6 shadow flex flex-col gap-2 animate-float">
+                    <span className="font-semibold text-cyan-400 text-lg">{map.rawText.slice(0, 40)}...</span>
+                    <span className="text-xs text-gray-400">Created: {new Date(map.createdAt).toLocaleDateString()}</span>
+                    <div className="flex gap-2 mt-2">
+                      <button className="bg-cyan-400 text-[#18122B] px-4 py-1 rounded-full text-sm">View</button>
+                    </div>
                   </div>
-                </div>
-                <div className="bg-[#18122B] rounded-xl p-6 shadow flex flex-col gap-2 animate-float">
-                  <span className="font-semibold text-green-400 text-lg">Research Notes</span>
-                  <span className="text-xs text-gray-400">Created: 2025-07-20</span>
-                  <div className="flex gap-2 mt-2">
-                    <button className="bg-cyan-400 text-[#18122B] px-4 py-1 rounded-full text-sm">View</button>
-                    <button className="bg-pink-400 text-white px-4 py-1 rounded-full text-sm">Delete</button>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
             {/* Account Info Card */}
@@ -215,10 +385,11 @@ function App() {
         return (
           <section className="max-w-md mx-auto px-4 py-20 animate-fade-in">
             <h2 className="text-4xl font-extrabold mb-6 text-cyan-400 text-center">Sign In</h2>
-            <form className="flex flex-col gap-6 bg-[#232144] rounded-2xl p-8 shadow-lg" onSubmit={e => {e.preventDefault();setIsLoggedIn(true);setSection('dashboard');}}>
-              <input type="email" placeholder="Email" className="px-4 py-3 rounded bg-[#18122B] text-white border border-cyan-400 focus:outline-none" />
-              <input type="password" placeholder="Password" className="px-4 py-3 rounded bg-[#18122B] text-white border border-cyan-400 focus:outline-none" />
-              <button type="submit" className="bg-cyan-400 text-[#18122B] font-semibold px-8 py-3 rounded-full shadow hover:bg-cyan-500 transition">Sign In</button>
+            <form className="flex flex-col gap-6 bg-[#232144] rounded-2xl p-8 shadow-lg" onSubmit={handleSignin}>
+              <input type="email" placeholder="Email" className="px-4 py-3 rounded bg-[#18122B] text-white border border-cyan-400 focus:outline-none" value={signinData.email} onChange={e => setSigninData({ ...signinData, email: e.target.value })} required />
+              <input type="password" placeholder="Password" className="px-4 py-3 rounded bg-[#18122B] text-white border border-cyan-400 focus:outline-none" value={signinData.password} onChange={e => setSigninData({ ...signinData, password: e.target.value })} required />
+              <button type="submit" className="bg-cyan-400 text-[#18122B] font-semibold px-8 py-3 rounded-full shadow hover:bg-cyan-500 transition" disabled={authLoading}>{authLoading ? 'Signing in...' : 'Sign In'}</button>
+              {authError && <div className="text-red-400 mt-2">{authError}</div>}
             </form>
             <div className="mt-6 text-center text-gray-400">Don't have an account? <span className="text-pink-400 cursor-pointer" onClick={() => setSection('signup')}>Sign Up</span></div>
           </section>
@@ -227,11 +398,12 @@ function App() {
         return (
           <section className="max-w-md mx-auto px-4 py-20 animate-fade-in">
             <h2 className="text-4xl font-extrabold mb-6 text-pink-400 text-center">Create Your Account</h2>
-            <form className="flex flex-col gap-6 bg-[#232144] rounded-2xl p-8 shadow-lg" onSubmit={e => {e.preventDefault();setIsLoggedIn(true);setSection('dashboard');}}>
-              <input type="text" placeholder="Full Name" className="px-4 py-3 rounded bg-[#18122B] text-white border border-pink-400 focus:outline-none" />
-              <input type="email" placeholder="Email" className="px-4 py-3 rounded bg-[#18122B] text-white border border-pink-400 focus:outline-none" />
-              <input type="password" placeholder="Password" className="px-4 py-3 rounded bg-[#18122B] text-white border border-pink-400 focus:outline-none" />
-              <button type="submit" className="bg-gradient-to-r from-pink-400 to-cyan-400 text-white font-semibold px-8 py-3 rounded-full shadow hover:from-cyan-400 hover:to-pink-400 transition animate-bounce">Sign Up</button>
+            <form className="flex flex-col gap-6 bg-[#232144] rounded-2xl p-8 shadow-lg" onSubmit={handleSignup}>
+              <input type="text" placeholder="Full Name" className="px-4 py-3 rounded bg-[#18122B] text-white border border-pink-400 focus:outline-none" value={signupData.name} onChange={e => setSignupData({ ...signupData, name: e.target.value })} required />
+              <input type="email" placeholder="Email" className="px-4 py-3 rounded bg-[#18122B] text-white border border-pink-400 focus:outline-none" value={signupData.email} onChange={e => setSignupData({ ...signupData, email: e.target.value })} required />
+              <input type="password" placeholder="Password" className="px-4 py-3 rounded bg-[#18122B] text-white border border-pink-400 focus:outline-none" value={signupData.password} onChange={e => setSignupData({ ...signupData, password: e.target.value })} required />
+              <button type="submit" className="bg-gradient-to-r from-pink-400 to-cyan-400 text-white font-semibold px-8 py-3 rounded-full shadow hover:from-cyan-400 hover:to-pink-400 transition animate-bounce" disabled={authLoading}>{authLoading ? 'Signing up...' : 'Sign Up'}</button>
+              {authError && <div className="text-red-400 mt-2">{authError}</div>}
             </form>
             <div className="mt-6 text-center text-gray-400">Already have an account? <span className="text-cyan-400 cursor-pointer" onClick={() => setSection('signin')}>Sign In</span></div>
           </section>
