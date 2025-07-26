@@ -65,12 +65,7 @@ function App() {
     }
   };
 
-  React.useEffect(() => {
-    if (isLoggedIn && section === 'dashboard') {
-      fetchSavedMaps();
-    }
-    // eslint-disable-next-line
-  }, [isLoggedIn, section]);
+  // ...existing code...
   const [inputText, setInputText] = React.useState("");
   const [mindMap, setMindMap] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
@@ -85,6 +80,13 @@ function App() {
   const [authError, setAuthError] = React.useState("");
   const [signupData, setSignupData] = React.useState({ name: '', email: '', password: '' });
   const [signinData, setSigninData] = React.useState({ email: '', password: '' });
+
+  React.useEffect(() => {
+    if (isLoggedIn && section === 'dashboard') {
+      fetchSavedMaps();
+    }
+    // eslint-disable-next-line
+  }, [isLoggedIn, section]);
 
   // Signup handler
   const handleSignup = async (e) => {
