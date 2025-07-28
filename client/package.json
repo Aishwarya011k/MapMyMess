@@ -11,7 +11,12 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.11",
+    "cytoscape": "^3.32.1",
+    "cytoscape-cola": "^2.5.1",
+    "cytoscape-dagre": "^2.5.0",
+    "pdfjs-dist": "^5.4.54",
     "react": "^19.1.0",
+    "react-cytoscapejs": "^2.0.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {

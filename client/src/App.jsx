@@ -1,5 +1,13 @@
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf';
 
 import React from 'react';
+import CytoscapeComponent from 'react-cytoscapejs';
+import cytoscape from 'cytoscape';
+import cola from 'cytoscape-cola';
+import dagre from 'cytoscape-dagre';
+
+cytoscape.use(cola);
+cytoscape.use(dagre);
 import logo from './assets';
 import heroSvg from './assets/hero.svg';
 import about from './assets/about.svg';
@@ -20,6 +28,46 @@ import './index.css';
 // @keyframes moveY { 0% { transform: translateY(0); } 100% { transform: translateY(18px); } }
 
 function App() {
+  // PDF upload handler
+  const handlePdfUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async function() {
+      const typedarray = new Uint8Array(this.result);
+      try {
+        const pdf = await pdfjsLib.getDocument({ data: typedarray }).promise;
+        let text = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          text += content.items.map(item => item.str).join(' ') + '\n';
+        }
+        setInputText(text);
+        // Auto-generate mind map after PDF upload
+        setTimeout(() => {
+          handleGenerate({ preventDefault: () => {} });
+        }, 100);
+      } catch (err) {
+        setError('Failed to read PDF: ' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+  // Layout options for Cytoscape
+  const layoutOptions = [
+    { name: 'breadthfirst', label: 'Tree (Breadthfirst)' },
+    { name: 'circle', label: 'Circle' },
+    { name: 'cose', label: 'Force-directed (COSE)' },
+    { name: 'cola', label: 'Cluster (Cola)' },
+    { name: 'dagre', label: 'Hierarchical (Dagre)' },
+  ];
+  const [cyLayout, setCyLayout] = React.useState('breadthfirst');
+  const [hoveredNode, setHoveredNode] = React.useState(null);
+  const [cyInstance, setCyInstance] = React.useState(null);
+
+  // Tooltip state
+  const [tooltip, setTooltip] = React.useState({ show: false, x: 0, y: 0, text: '' });
   const [savedMaps, setSavedMaps] = React.useState([]);
 
   // Save mind map securely
@@ -235,26 +283,14 @@ function App() {
         );
       case 'try':
         return (
-          <section className="max-w-4xl mx-auto px-4 py-20 flex flex-col md:flex-row gap-12 items-center animate-fade-in">
+          <section className="max-w-4xl mx-auto px-4 py-20 flex flex-col md:flex-row gap-12 items-center animate-fade-in" style={{ position: 'relative' }}>
             {/* Left: Input */}
             <div className="flex-1 flex flex-col gap-6">
+              {/* PDF Upload */}
+              <label className="block mb-2 text-cyan-300 font-semibold">Upload PDF to extract text:</label>
+              <input type="file" accept="application/pdf" onChange={handlePdfUpload} className="mb-4 text-white" />
               <h2 className="text-3xl font-extrabold mb-2 tracking-tight">Try MapMyMess Live</h2>
-              <p className="text-gray-300 mb-2">Paste your messy notes below and see the magic!</p>
-              {/* Only one textarea and button for input and generation */}
-              <textarea
-                className="w-full min-h-[120px] bg-[#232144] border-2 border-cyan-400 rounded-xl text-white text-base p-4 mb-4 focus:outline-none focus:border-pink-400 resize-y transition-all duration-300"
-                placeholder="Paste your messy notes here..."              
-               
-                value={inputText}
-                onChange={e => setInputText(e.target.value)}
-              />
-              <button
-                className="bg-gradient-to-r from-cyan-400 to-pink-400 text-white font-semibold px-8 py-3 rounded-full shadow hover:from-pink-400 hover:to-cyan-400 transition-all duration-300 animate-bounce"
-                onClick={handleGenerate}
-                disabled={loading}
-              >
-                {loading ? 'Generating...' : 'Generate Mind Map'}
-              </button>
+              <p className="text-gray-300 mb-2">Turn scattered thoughts into structured ideas!</p>
               <textarea
                 className="w-full min-h-[120px] bg-[#232144] border-2 border-cyan-400 rounded-xl text-white text-base p-4 mb-4 focus:outline-none focus:border-pink-400 resize-y transition-all duration-300"
                 placeholder="Paste your messy notes here..."
@@ -268,25 +304,143 @@ function App() {
               >
                 {loading ? 'Generating...' : 'Generate Mind Map'}
               </button>
+              {/* Layout Switcher */}
+              <div className="mt-4 flex gap-2 items-center">
+                <span className="text-cyan-300 font-semibold">Layout:</span>
+                <select
+                  className="bg-[#232144] border border-cyan-400 text-white rounded px-2 py-1"
+                  value={cyLayout}
+                  onChange={e => setCyLayout(e.target.value)}
+                >
+                  {layoutOptions.map(opt => (
+                    <option key={opt.name} value={opt.name}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-            {/* Right: Mind Map Visualization (real data) */}
+            {/* Right: Mind Map Visualization (Cytoscape.js) */}
             <div className="flex-1 flex flex-col items-center justify-center">
               <div className="relative w-full max-w-md min-h-72 bg-[#232144] rounded-2xl shadow-lg flex flex-col items-center justify-center overflow-auto animate-float p-4">
                 {error && <div className="text-red-400 mb-2">{error}</div>}
                 {mindMap && mindMap.nodes && mindMap.nodes.length > 0 ? (
                   <>
-                    <div className="mb-4 text-cyan-300 font-bold">Nodes:</div>
-                    <ul className="mb-4">
-                      {mindMap.nodes.map((node, idx) => (
-                        <li key={idx} className="text-white">{node.data.label}</li>
-                      ))}
-                    </ul>
-                    <div className="mb-2 text-pink-300 font-bold">Edges:</div>
-                    <ul>
-                      {mindMap.edges.map((edge, idx) => (
-                        <li key={idx} className="text-gray-300">{edge.data.source} → {edge.data.target}</li>
-                      ))}
-                    </ul>
+                    <CytoscapeComponent
+                      cy={cy => {
+                        setCyInstance(cy);
+                        // Remove previous listeners
+                        cy.removeAllListeners && cy.removeAllListeners();
+                        // Hover events
+                        cy.on('mouseover', 'node', (evt) => {
+                          const node = evt.target;
+                          setHoveredNode(node.id());
+                          // Highlight connected edges/nodes
+                          node.addClass('highlighted');
+                          node.connectedEdges().addClass('highlighted');
+                          node.connectedEdges().targets().addClass('highlighted');
+                          // Tooltip
+                          const pos = evt.renderedPosition || node.renderedPosition();
+                          setTooltip({ show: true, x: pos.x, y: pos.y, text: node.data('label') });
+                        });
+                        cy.on('mouseout', 'node', (evt) => {
+                          const node = evt.target;
+                          setHoveredNode(null);
+                          node.removeClass('highlighted');
+                          node.connectedEdges().removeClass('highlighted');
+                          node.connectedEdges().targets().removeClass('highlighted');
+                          setTooltip({ show: false, x: 0, y: 0, text: '' });
+                        });
+                      }}
+                      elements={[
+                        ...mindMap.nodes.map((n, i) => ({
+                          data: {
+                            ...n.data,
+                            label: (n.data.label || '') + (i === 0 ? ' 💡' : ' 📍'),
+                            group: i === 0 ? 'main' : 'secondary',
+                          }
+                        })),
+                        ...mindMap.edges.map(e => ({ data: e.data }))
+                      ]}
+                      style={{ width: '100%', height: '350px', background: '#232144', borderRadius: '1rem' }}
+                      layout={{ name: cyLayout, directed: true, padding: 10 }}
+                      stylesheet={[
+                        {
+                          selector: 'node[group="main"]',
+                          style: {
+                            'background-color': '#06b6d4',
+                            'label': 'data(label)',
+                            'color': '#fff',
+                            'font-size': '18px',
+                            'text-valign': 'center',
+                            'text-halign': 'center',
+                            'border-width': 3,
+                            'border-color': '#f472b6',
+                            'width': 50,
+                            'height': 50,
+                            'font-family': 'monospace',
+                            'text-wrap': 'wrap',
+                            'text-max-width': 40,
+                          }
+                        },
+                        {
+                          selector: 'node[group="secondary"]',
+                          style: {
+                            'background-color': '#a21caf',
+                            'label': 'data(label)',
+                            'color': '#fff',
+                            'font-size': '16px',
+                            'text-valign': 'center',
+                            'text-halign': 'center',
+                            'border-width': 2,
+                            'border-color': '#fff',
+                            'width': 40,
+                            'height': 40,
+                            'font-family': 'monospace',
+                            'text-wrap': 'wrap',
+                            'text-max-width': 40,
+                          }
+                        },
+                        {
+                          selector: 'edge',
+                          style: {
+                            'width': 3,
+                            'line-color': '#f472b6',
+                            'target-arrow-color': '#f472b6',
+                            'target-arrow-shape': 'triangle',
+                            'curve-style': 'bezier',
+                          }
+                        },
+                        {
+                          selector: '.highlighted',
+                          style: {
+                            'background-color': '#fbbf24',
+                            'line-color': '#fbbf24',
+                            'target-arrow-color': '#fbbf24',
+                            'transition-property': 'background-color, line-color, target-arrow-color',
+                            'transition-duration': '0.2s',
+                          }
+                        }
+                      ]}
+                    />
+                    {/* Tooltip for node hover */}
+                    {tooltip.show && (
+                      <div style={{
+                        position: 'absolute',
+                        left: tooltip.x + 30,
+                        top: tooltip.y,
+                        background: '#232144',
+                        color: '#fff',
+                        padding: '8px 14px',
+                        borderRadius: '8px',
+                        boxShadow: '0 2px 8px #0006',
+                        pointerEvents: 'none',
+                        zIndex: 10,
+                        fontSize: '15px',
+                        fontFamily: 'monospace',
+                        border: '1px solid #06b6d4',
+                      }}>
+                        {tooltip.text}
+                      </div>
+                    )}
                     {isLoggedIn && (
                       <button className="mt-4 bg-cyan-400 text-[#18122B] px-6 py-2 rounded-full font-semibold hover:bg-cyan-500 transition" onClick={handleSaveMindMap} disabled={loading}>
                         {loading ? 'Saving...' : 'Save Mind Map'}
