@@ -1,4 +1,4 @@
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf';
+// import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf';
 
 import React from 'react';
 import CytoscapeComponent from 'react-cytoscapejs';
@@ -8,7 +8,8 @@ import dagre from 'cytoscape-dagre';
 
 cytoscape.use(cola);
 cytoscape.use(dagre);
-import logo from './assets';
+import logo from './assets/logo.png';
+import { exportCytoscapePng, exportMindMapJson } from './exportUtils';
 import heroSvg from './assets/hero.svg';
 import about from './assets/about.svg';
 import './index.css';
@@ -28,31 +29,129 @@ import './index.css';
 // @keyframes moveY { 0% { transform: translateY(0); } 100% { transform: translateY(18px); } }
 
 function App() {
-  // PDF upload handler
-  const handlePdfUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async function() {
-      const typedarray = new Uint8Array(this.result);
-      try {
-        const pdf = await pdfjsLib.getDocument({ data: typedarray }).promise;
-        let text = '';
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const content = await page.getTextContent();
-          text += content.items.map(item => item.str).join(' ') + '\n';
+  // State for selected map to view on dashboard
+  const [selectedMap, setSelectedMap] = React.useState(null);
+
+  // All state declarations at the very top (no duplicates)
+  const [mindMap, setMindMap] = React.useState(null);
+  const [error, setError] = React.useState("");
+  const [tooltip, setTooltip] = React.useState({ show: false, x: 0, y: 0, text: '' });
+  const [cyLayout, setCyLayout] = React.useState('breadthfirst');
+  const [cyInstance, setCyInstance] = React.useState(null);
+  const [hoveredNode, setHoveredNode] = React.useState(null);
+  const [savedMaps, setSavedMaps] = React.useState([]);
+  const [inputText, setInputText] = React.useState("");
+  const [isLoggedIn, setIsLoggedIn] = React.useState(!!localStorage.getItem('token'));
+  const [section, setSection] = React.useState('home');
+  const [mainNodeColor, setMainNodeColor] = React.useState('#06b6d4');
+  const [secondaryNodeColor, setSecondaryNodeColor] = React.useState('#a21caf');
+  const [edgeColor, setEdgeColor] = React.useState('#f472b6');
+  const [loading, setLoading] = React.useState(false);
+  const [authLoading, setAuthLoading] = React.useState(false);
+  const [authError, setAuthError] = React.useState("");
+  const [signinData, setSigninData] = React.useState({ email: '', password: '' });
+  const [signupData, setSignupData] = React.useState({ name: '', email: '', password: '' });
+  const [resetToken, setResetToken] = React.useState("");
+  const [resetPassword, setResetPassword] = React.useState("");
+  const [resetMsg, setResetMsg] = React.useState("");
+  const [resetLoading, setResetLoading] = React.useState(false);
+  const [forgotEmail, setForgotEmail] = React.useState("");
+  const [forgotMsg, setForgotMsg] = React.useState("");
+  const [forgotLoading, setForgotLoading] = React.useState(false);
+  const cyRef = React.useRef(null);
+
+  // Handle reset password from URL
+  React.useEffect(() => {
+    const match = window.location.pathname.match(/^\/reset-password\/(.+)$/);
+    if (match) {
+      setSection('reset');
+      setResetToken(match[1]);
+    }
+  }, []);
+  // Fetch user mind maps for dashboard
+  React.useEffect(() => {
+    const fetchUserMaps = async () => {
+      if (section === 'dashboard' && isLoggedIn) {
+        try {
+          const token = localStorage.getItem('token');
+          const res = await fetch('/api/secure-mindmaps', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (!res.ok) throw new Error('Failed to fetch mind maps');
+          const data = await res.json();
+          setSavedMaps(data);
+        } catch (err) {
+          setSavedMaps([]);
         }
-        setInputText(text);
-        // Auto-generate mind map after PDF upload
-        setTimeout(() => {
-          handleGenerate({ preventDefault: () => {} });
-        }, 100);
-      } catch (err) {
-        setError('Failed to read PDF: ' + err.message);
       }
     };
-    reader.readAsArrayBuffer(file);
+    fetchUserMaps();
+  }, [section, isLoggedIn]);
+  // ...existing code...
+
+  // Handle reset password form submit
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    setResetLoading(true);
+    setResetMsg("");
+    try {
+      const res = await fetch("http://localhost:5000/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: resetToken, password: resetPassword })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to reset password");
+      setResetMsg("Password reset successful! You can now sign in.");
+    } catch (err) {
+      setResetMsg(err.message || "Error resetting password");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+  // ...existing code...
+
+  // Forgot password handler
+  const handleForgot = async (e) => {
+    e.preventDefault();
+    setForgotLoading(true);
+    setForgotMsg("");
+    try {
+      const res = await fetch("http://localhost:5000/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to send reset link");
+      setForgotMsg("Password reset link sent! Check your email.");
+    } catch (err) {
+      setForgotMsg(err.message || "Error sending reset link");
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+  // Signup handler
+  const handleSignup = async (e) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const res = await fetch("http://localhost:5000/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(signupData)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Sign up failed");
+      localStorage.setItem("token", data.token);
+      setIsLoggedIn(true);
+      setSection("dashboard");
+    } catch (err) {
+      setAuthError(err.message || "Error signing up");
+    } finally {
+      setAuthLoading(false);
+    }
   };
   // Layout options for Cytoscape
   const layoutOptions = [
@@ -62,142 +161,77 @@ function App() {
     { name: 'cola', label: 'Cluster (Cola)' },
     { name: 'dagre', label: 'Hierarchical (Dagre)' },
   ];
-  const [cyLayout, setCyLayout] = React.useState('breadthfirst');
-  const [hoveredNode, setHoveredNode] = React.useState(null);
-  const [cyInstance, setCyInstance] = React.useState(null);
-
-  // Tooltip state
-  const [tooltip, setTooltip] = React.useState({ show: false, x: 0, y: 0, text: '' });
-  const [savedMaps, setSavedMaps] = React.useState([]);
-
-  // Save mind map securely
-  const handleSaveMindMap = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/secure-mindmaps', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ rawText: inputText, nodes: mindMap.nodes, edges: mindMap.edges })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Save failed');
-      alert('Mind map saved!');
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Fetch saved mind maps for dashboard
-  const fetchSavedMaps = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/secure-mindmaps', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Fetch failed');
-      setSavedMaps(data);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // ...existing code...
-  const [inputText, setInputText] = React.useState("");
-  const [mindMap, setMindMap] = React.useState(null);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState("");
-  const [section, setSection] = React.useState('home');
-  const [isLoggedIn, setIsLoggedIn] = React.useState(!!localStorage.getItem('token'));
-  const [user, setUser] = React.useState(() => {
-    const u = localStorage.getItem('user');
-    return u ? JSON.parse(u) : null;
-  });
-  const [authLoading, setAuthLoading] = React.useState(false);
-  const [authError, setAuthError] = React.useState("");
-  const [signupData, setSignupData] = React.useState({ name: '', email: '', password: '' });
-  const [signinData, setSigninData] = React.useState({ email: '', password: '' });
 
-  React.useEffect(() => {
-    if (isLoggedIn && section === 'dashboard') {
-      fetchSavedMaps();
-    }
-    // eslint-disable-next-line
-  }, [isLoggedIn, section]);
-
-  // Signup handler
-  const handleSignup = async (e) => {
-    e.preventDefault();
-    setAuthLoading(true);
-    setAuthError("");
-    try {
-      const res = await fetch('http://localhost:5000/api/auth/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(signupData)
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Signup failed');
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      setUser(data.user);
-      setIsLoggedIn(true);
-      setSection('dashboard');
-    } catch (err) {
-      setAuthError(err.message);
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  // Signin handler
+  // Add handleSignin function
   const handleSignin = async (e) => {
     e.preventDefault();
     setAuthLoading(true);
     setAuthError("");
     try {
-      const res = await fetch('http://localhost:5000/api/auth/signin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("http://localhost:5000/api/auth/signin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(signinData)
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Signin failed');
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      setUser(data.user);
+      if (!res.ok) throw new Error(data.message || "Sign in failed");
+      localStorage.setItem("token", data.token);
       setIsLoggedIn(true);
-      setSection('dashboard');
+      setSection("dashboard");
     } catch (err) {
-      setAuthError(err.message);
+      setAuthError(err.message || "Error signing in");
     } finally {
       setAuthLoading(false);
     }
   };
-
-  // Logout handler
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setIsLoggedIn(false);
-    setUser(null);
-    setSection('home');
-  };
-
-  // Function to handle mind map generation
+  // Generate mind map from inputText
   const handleGenerate = async (e) => {
-    e.preventDefault();
+    e && e.preventDefault && e.preventDefault();
+    setLoading(true);
+    setError("");
+    setMindMap(null);
+    try {
+      const res = await fetch("http://localhost:5000/api/mindmaps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rawText: inputText })
+      });
+      if (!res.ok) throw new Error("Failed to generate mind map");
+      const data = await res.json();
+      setMindMap(data);
+    } catch (err) {
+      setError(err.message || "Error generating mind map");
+    } finally {
+      setLoading(false);
+    }
+  };
+  // ...existing code...
+  // PDF upload handler (uses backend for heading extraction)
+  const handlePdfUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('pdf', file);
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch('http://localhost:5000/api/pdf-to-text', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'PDF extraction failed');
+      setInputText(data.text);
+      setTimeout(() => {
+        handleGenerate({ preventDefault: () => {} });
+      }, 100);
+    } catch (err) {
+      setError('Failed to extract PDF: ' + err.message);
+    } finally {
+    setAuthLoading(true);
+    }
+  setAuthLoading(true);
     setLoading(true);
     setError("");
     setMindMap(null);
@@ -282,176 +316,80 @@ function App() {
           </>
         );
       case 'try':
+        if (!isLoggedIn) {
+          return (
+            <section className="max-w-2xl mx-auto px-4 py-20 text-center animate-fade-in">
+              <h2 className="text-3xl font-extrabold mb-4 text-pink-400">Sign in required</h2>
+              <p className="text-gray-300 mb-6">You must be signed in to use Try MapMyMess. Please sign in or create an account.</p>
+              <button className="bg-cyan-400 text-[#18122B] font-semibold px-8 py-3 rounded-full shadow hover:bg-cyan-500 transition" onClick={()=>setSection('signin')}>Sign In</button>
+            </section>
+          );
+        }
         return (
-          <section className="max-w-4xl mx-auto px-4 py-20 flex flex-col md:flex-row gap-12 items-center animate-fade-in" style={{ position: 'relative' }}>
-            {/* Left: Input */}
-            <div className="flex-1 flex flex-col gap-6">
-              {/* PDF Upload */}
-              <label className="block mb-2 text-cyan-300 font-semibold">Upload PDF to extract text:</label>
-              <input type="file" accept="application/pdf" onChange={handlePdfUpload} className="mb-4 text-white" />
-              <h2 className="text-3xl font-extrabold mb-2 tracking-tight">Try MapMyMess Live</h2>
-              <p className="text-gray-300 mb-2">Turn scattered thoughts into structured ideas!</p>
+          <section className="max-w-3xl mx-auto px-4 py-20 animate-fade-in">
+            <h2 className="text-4xl font-extrabold mb-8 text-cyan-400 text-center">Try MapMyMess</h2>
+            <form className="flex flex-col gap-6 bg-[#232144] rounded-2xl p-8 shadow-lg mb-8" onSubmit={handleGenerate}>
               <textarea
-                className="w-full min-h-[120px] bg-[#232144] border-2 border-cyan-400 rounded-xl text-white text-base p-4 mb-4 focus:outline-none focus:border-pink-400 resize-y transition-all duration-300"
-                placeholder="Paste your messy notes here..."
+                className="px-4 py-3 rounded bg-[#18122B] text-white border border-cyan-400 focus:outline-none min-h-[120px]"
+                placeholder="Paste your messy notes, transcript, or brainstorm here..."
                 value={inputText}
                 onChange={e => setInputText(e.target.value)}
+                required
               />
-              <button
-                className="bg-gradient-to-r from-cyan-400 to-pink-400 text-white font-semibold px-8 py-3 rounded-full shadow hover:from-pink-400 hover:to-cyan-400 transition-all duration-300 animate-bounce"
-                onClick={handleGenerate}
-                disabled={loading}
-              >
-                {loading ? 'Generating...' : 'Generate Mind Map'}
-              </button>
-              {/* Layout Switcher */}
-              <div className="mt-4 flex gap-2 items-center">
-                <span className="text-cyan-300 font-semibold">Layout:</span>
-                <select
-                  className="bg-[#232144] border border-cyan-400 text-white rounded px-2 py-1"
-                  value={cyLayout}
-                  onChange={e => setCyLayout(e.target.value)}
-                >
-                  {layoutOptions.map(opt => (
-                    <option key={opt.name} value={opt.name}>{opt.label}</option>
-                  ))}
-                </select>
+              <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="file" accept="application/pdf" className="hidden" onChange={handlePdfUpload} />
+                  <span className="bg-pink-400 text-white px-4 py-2 rounded-full font-semibold hover:bg-pink-500 transition cursor-pointer">Upload PDF</span>
+                </label>
+                <button type="submit" className="bg-cyan-400 text-[#18122B] font-semibold px-8 py-3 rounded-full shadow hover:bg-cyan-500 transition" disabled={loading}>{loading ? 'Generating...' : 'Generate Mind Map'}</button>
               </div>
-            </div>
-            {/* Right: Mind Map Visualization (Cytoscape.js) */}
-            <div className="flex-1 flex flex-col items-center justify-center">
-              <div className="relative w-full max-w-md min-h-72 bg-[#232144] rounded-2xl shadow-lg flex flex-col items-center justify-center overflow-auto animate-float p-4">
-                {error && <div className="text-red-400 mb-2">{error}</div>}
-                {mindMap && mindMap.nodes && mindMap.nodes.length > 0 ? (
-                  <>
-                    <CytoscapeComponent
-                      cy={cy => {
-                        setCyInstance(cy);
-                        // Remove previous listeners
-                        cy.removeAllListeners && cy.removeAllListeners();
-                        // Hover events
-                        cy.on('mouseover', 'node', (evt) => {
-                          const node = evt.target;
-                          setHoveredNode(node.id());
-                          // Highlight connected edges/nodes
-                          node.addClass('highlighted');
-                          node.connectedEdges().addClass('highlighted');
-                          node.connectedEdges().targets().addClass('highlighted');
-                          // Tooltip
-                          const pos = evt.renderedPosition || node.renderedPosition();
-                          setTooltip({ show: true, x: pos.x, y: pos.y, text: node.data('label') });
-                        });
-                        cy.on('mouseout', 'node', (evt) => {
-                          const node = evt.target;
-                          setHoveredNode(null);
-                          node.removeClass('highlighted');
-                          node.connectedEdges().removeClass('highlighted');
-                          node.connectedEdges().targets().removeClass('highlighted');
-                          setTooltip({ show: false, x: 0, y: 0, text: '' });
-                        });
-                      }}
-                      elements={[
-                        ...mindMap.nodes.map((n, i) => ({
-                          data: {
-                            ...n.data,
-                            label: (n.data.label || '') + (i === 0 ? ' 💡' : ' 📍'),
-                            group: i === 0 ? 'main' : 'secondary',
-                          }
-                        })),
-                        ...mindMap.edges.map(e => ({ data: e.data }))
-                      ]}
-                      style={{ width: '100%', height: '350px', background: '#232144', borderRadius: '1rem' }}
-                      layout={{ name: cyLayout, directed: true, padding: 10 }}
-                      stylesheet={[
-                        {
-                          selector: 'node[group="main"]',
-                          style: {
-                            'background-color': '#06b6d4',
-                            'label': 'data(label)',
-                            'color': '#fff',
-                            'font-size': '18px',
-                            'text-valign': 'center',
-                            'text-halign': 'center',
-                            'border-width': 3,
-                            'border-color': '#f472b6',
-                            'width': 50,
-                            'height': 50,
-                            'font-family': 'monospace',
-                            'text-wrap': 'wrap',
-                            'text-max-width': 40,
-                          }
-                        },
-                        {
-                          selector: 'node[group="secondary"]',
-                          style: {
-                            'background-color': '#a21caf',
-                            'label': 'data(label)',
-                            'color': '#fff',
-                            'font-size': '16px',
-                            'text-valign': 'center',
-                            'text-halign': 'center',
-                            'border-width': 2,
-                            'border-color': '#fff',
-                            'width': 40,
-                            'height': 40,
-                            'font-family': 'monospace',
-                            'text-wrap': 'wrap',
-                            'text-max-width': 40,
-                          }
-                        },
-                        {
-                          selector: 'edge',
-                          style: {
-                            'width': 3,
-                            'line-color': '#f472b6',
-                            'target-arrow-color': '#f472b6',
-                            'target-arrow-shape': 'triangle',
-                            'curve-style': 'bezier',
-                          }
-                        },
-                        {
-                          selector: '.highlighted',
-                          style: {
-                            'background-color': '#fbbf24',
-                            'line-color': '#fbbf24',
-                            'target-arrow-color': '#fbbf24',
-                            'transition-property': 'background-color, line-color, target-arrow-color',
-                            'transition-duration': '0.2s',
-                          }
-                        }
-                      ]}
-                    />
-                    {/* Tooltip for node hover */}
-                    {tooltip.show && (
-                      <div style={{
-                        position: 'absolute',
-                        left: tooltip.x + 30,
-                        top: tooltip.y,
-                        background: '#232144',
-                        color: '#fff',
-                        padding: '8px 14px',
-                        borderRadius: '8px',
-                        boxShadow: '0 2px 8px #0006',
-                        pointerEvents: 'none',
-                        zIndex: 10,
-                        fontSize: '15px',
-                        fontFamily: 'monospace',
-                        border: '1px solid #06b6d4',
-                      }}>
-                        {tooltip.text}
-                      </div>
-                    )}
-                    {isLoggedIn && (
-                      <button className="mt-4 bg-cyan-400 text-[#18122B] px-6 py-2 rounded-full font-semibold hover:bg-cyan-500 transition" onClick={handleSaveMindMap} disabled={loading}>
-                        {loading ? 'Saving...' : 'Save Mind Map'}
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <span className="mt-4 text-gray-400 text-sm">{loading ? 'Generating mind map...' : '(No mind map yet)'}</span>
-                )}
+              {error && <div className="text-red-400 mt-2 text-center">{error}</div>}
+            </form>
+            {/* Mind Map Visualization */}
+            {mindMap && (
+              <div className="bg-[#232144] rounded-2xl shadow-lg p-8 mt-8">
+                <h3 className="text-2xl font-bold text-cyan-300 mb-4">Your Mind Map</h3>
+                <CytoscapeComponent
+                  elements={CytoscapeComponent.normalizeElements(mindMap)}
+                  style={{ width: '100%', height: '500px', background: '#18122B', borderRadius: '1rem' }}
+                  cy={cy => {
+                    cyRef.current = cy;
+                    setCyInstance(cy);
+                  }}
+                  layout={{ name: cyLayout }}
+                  stylesheet={[
+                    {
+                      selector: 'node',
+                      style: {
+                        'background-color': ele => ele.data('level') === 0 ? mainNodeColor : secondaryNodeColor,
+                        'label': 'data(label)',
+                        'color': '#fff',
+                        'font-size': 18,
+                        'text-valign': 'center',
+                        'text-halign': 'center',
+                        'text-outline-width': 2,
+                        'text-outline-color': '#232144',
+                        'width': 50,
+                        'height': 50,
+                        'border-width': 3,
+                        'border-color': '#fff',
+                        'z-index': 10,
+                      },
+                    },
+                    {
+                      selector: 'edge',
+                      style: {
+                        'width': 4,
+                        'line-color': edgeColor,
+                        'target-arrow-color': edgeColor,
+                        'target-arrow-shape': 'triangle',
+                        'curve-style': 'bezier',
+                      },
+                    },
+                  ]}
+                />
               </div>
-            </div>
+            )}
           </section>
         );
       case 'dashboard':
@@ -461,7 +399,7 @@ function App() {
             {/* Stats Row */}
             <div className="flex flex-col md:flex-row gap-8 mb-12 justify-center">
               <div className="flex-1 bg-gradient-to-br from-cyan-400/20 to-[#232144] rounded-2xl shadow-lg p-8 flex flex-col items-center">
-                <span className="text-5xl font-bold text-cyan-400 mb-2">2</span>
+                <span className="text-5xl font-bold text-cyan-400 mb-2">{savedMaps.length}</span>
                 <span className="text-lg text-gray-200">Mind Maps Saved</span>
               </div>
               <div className="flex-1 bg-gradient-to-br from-pink-400/20 to-[#232144] rounded-2xl shadow-lg p-8 flex flex-col items-center">
@@ -473,10 +411,19 @@ function App() {
                 <span className="text-lg text-gray-200">Exports</span>
               </div>
             </div>
-            {/* Quick Actions */}
+            {/* Quick Actions & Export */}
             <div className="flex flex-col md:flex-row gap-8 mb-12 justify-center">
-              <button className="flex-1 bg-gradient-to-r from-cyan-400 to-pink-400 text-white font-semibold px-8 py-6 rounded-2xl shadow-lg hover:from-pink-400 hover:to-cyan-400 transition animate-bounce text-xl">Create New Mind Map</button>
-              <button className="flex-1 bg-gradient-to-r from-pink-400 to-cyan-400 text-white font-semibold px-8 py-6 rounded-2xl shadow-lg hover:from-cyan-400 hover:to-pink-400 transition text-xl">Export All</button>
+              <button className="flex-1 bg-gradient-to-r from-cyan-400 to-pink-400 text-white font-semibold px-8 py-6 rounded-2xl shadow-lg hover:from-pink-400 hover:to-cyan-400 transition animate-bounce text-xl" onClick={()=>setSection('try')}>Create New Mind Map</button>
+              <div className="flex flex-col gap-2 flex-1 items-center justify-center">
+                <button className="w-full bg-gradient-to-r from-pink-400 to-cyan-400 text-white font-semibold px-8 py-3 rounded-2xl shadow-lg hover:from-cyan-400 hover:to-pink-400 transition text-lg mb-2" onClick={()=>exportCytoscapePng(cyRef.current)}>Export as PNG</button>
+                <button className="w-full bg-gradient-to-r from-cyan-400 to-pink-400 text-white font-semibold px-8 py-3 rounded-2xl shadow-lg hover:from-pink-400 hover:to-cyan-400 transition text-lg" onClick={()=>exportMindMapJson(selectedMap ? selectedMap.mapData : mindMap)}>Export as JSON</button>
+              </div>
+            </div>
+            {/* Color Customization */}
+            <div className="flex flex-wrap gap-6 mb-8 justify-center items-center">
+              <div className="flex items-center gap-2"><span className="text-cyan-400">Main Node</span><input type="color" value={mainNodeColor} onChange={e=>setMainNodeColor(e.target.value)} /></div>
+              <div className="flex items-center gap-2"><span className="text-pink-400">Secondary Node</span><input type="color" value={secondaryNodeColor} onChange={e=>setSecondaryNodeColor(e.target.value)} /></div>
+              <div className="flex items-center gap-2"><span className="text-yellow-400">Edge</span><input type="color" value={edgeColor} onChange={e=>setEdgeColor(e.target.value)} /></div>
             </div>
             {/* Saved Mind Maps List */}
             <div className="bg-[#232144] rounded-2xl shadow-lg p-8 mb-12">
@@ -487,12 +434,58 @@ function App() {
                     <span className="font-semibold text-cyan-400 text-lg">{map.rawText.slice(0, 40)}...</span>
                     <span className="text-xs text-gray-400">Created: {new Date(map.createdAt).toLocaleDateString()}</span>
                     <div className="flex gap-2 mt-2">
-                      <button className="bg-cyan-400 text-[#18122B] px-4 py-1 rounded-full text-sm">View</button>
+                      <button className="bg-cyan-400 text-[#18122B] px-4 py-1 rounded-full text-sm" onClick={()=>setSelectedMap({mapData: map.mindMap, rawText: map.rawText})}>View</button>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
+            {/* Mind Map Visualization for selected map */}
+            {selectedMap && selectedMap.mapData && (
+              <div className="bg-[#232144] rounded-2xl shadow-lg p-8 mb-12">
+                <h3 className="text-2xl font-bold text-cyan-300 mb-4">Selected Mind Map</h3>
+                <div className="mb-4 text-gray-300 text-sm">{selectedMap.rawText.slice(0, 120)}...</div>
+                <CytoscapeComponent
+                  elements={CytoscapeComponent.normalizeElements(selectedMap.mapData)}
+                  style={{ width: '100%', height: '500px', background: '#18122B', borderRadius: '1rem' }}
+                  cy={cy => {
+                    cyRef.current = cy;
+                    setCyInstance(cy);
+                  }}
+                  layout={{ name: cyLayout }}
+                  stylesheet={[
+                    {
+                      selector: 'node',
+                      style: {
+                        'background-color': ele => ele.data('level') === 0 ? mainNodeColor : secondaryNodeColor,
+                        'label': 'data(label)',
+                        'color': '#fff',
+                        'font-size': 18,
+                        'text-valign': 'center',
+                        'text-halign': 'center',
+                        'text-outline-width': 2,
+                        'text-outline-color': '#232144',
+                        'width': 50,
+                        'height': 50,
+                        'border-width': 3,
+                        'border-color': '#fff',
+                        'z-index': 10,
+                      },
+                    },
+                    {
+                      selector: 'edge',
+                      style: {
+                        'width': 4,
+                        'line-color': edgeColor,
+                        'target-arrow-color': edgeColor,
+                        'target-arrow-shape': 'triangle',
+                        'curve-style': 'bezier',
+                      },
+                    },
+                  ]}
+                />
+              </div>
+            )}
             {/* Account Info Card */}
             <div className="max-w-md mx-auto bg-gradient-to-br from-pink-400/20 to-[#232144] rounded-2xl shadow-lg p-8 flex flex-col gap-4 items-center">
               <h3 className="text-xl font-bold text-pink-300 mb-2">Account Info</h3>
@@ -545,9 +538,36 @@ function App() {
               <input type="email" placeholder="Email" className="px-4 py-3 rounded bg-[#18122B] text-white border border-cyan-400 focus:outline-none" value={signinData.email} onChange={e => setSigninData({ ...signinData, email: e.target.value })} required />
               <input type="password" placeholder="Password" className="px-4 py-3 rounded bg-[#18122B] text-white border border-cyan-400 focus:outline-none" value={signinData.password} onChange={e => setSigninData({ ...signinData, password: e.target.value })} required />
               <button type="submit" className="bg-cyan-400 text-[#18122B] font-semibold px-8 py-3 rounded-full shadow hover:bg-cyan-500 transition" disabled={authLoading}>{authLoading ? 'Signing in...' : 'Sign In'}</button>
+              <span className="text-sm text-cyan-300 mt-2 cursor-pointer hover:underline text-center" onClick={()=>setSection('forgot')}>Forgot password?</span>
               {authError && <div className="text-red-400 mt-2">{authError}</div>}
             </form>
             <div className="mt-6 text-center text-gray-400">Don't have an account? <span className="text-pink-400 cursor-pointer" onClick={() => setSection('signup')}>Sign Up</span></div>
+          </section>
+        );
+
+      case 'forgot':
+        return (
+          <section className="max-w-md mx-auto px-4 py-20 animate-fade-in">
+            <h2 className="text-4xl font-extrabold mb-6 text-pink-400 text-center">Forgot Password</h2>
+            <form className="flex flex-col gap-6 bg-[#232144] rounded-2xl p-8 shadow-lg" onSubmit={handleForgot}>
+              <input type="email" placeholder="Enter your email" className="px-4 py-3 rounded bg-[#18122B] text-white border border-pink-400 focus:outline-none" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required />
+              <button type="submit" className="bg-pink-400 text-white font-semibold px-8 py-3 rounded-full shadow hover:bg-pink-500 transition" disabled={forgotLoading}>{forgotLoading ? 'Sending...' : 'Send Reset Link'}</button>
+              {forgotMsg && <div className="text-cyan-300 mt-2 text-center">{forgotMsg}</div>}
+            </form>
+            <div className="mt-6 text-center text-gray-400">Remembered? <span className="text-cyan-400 cursor-pointer" onClick={() => setSection('signin')}>Back to Sign In</span></div>
+          </section>
+        );
+      case 'reset':
+        return (
+          <section className="max-w-md mx-auto px-4 py-20 animate-fade-in">
+            <h2 className="text-4xl font-extrabold mb-6 text-cyan-400 text-center">Reset Password</h2>
+            <form className="flex flex-col gap-6 bg-[#232144] rounded-2xl p-8 shadow-lg" onSubmit={handleResetPassword}>
+              <input type="text" placeholder="Reset token from email" className="px-4 py-3 rounded bg-[#18122B] text-white border border-cyan-400 focus:outline-none" value={resetToken} onChange={e => setResetToken(e.target.value)} required />
+              <input type="password" placeholder="New password" className="px-4 py-3 rounded bg-[#18122B] text-white border border-cyan-400 focus:outline-none" value={resetPassword} onChange={e => setResetPassword(e.target.value)} required />
+              <button type="submit" className="bg-cyan-400 text-[#18122B] font-semibold px-8 py-3 rounded-full shadow hover:bg-cyan-500 transition" disabled={resetLoading}>{resetLoading ? 'Resetting...' : 'Reset Password'}</button>
+              {resetMsg && <div className="text-cyan-300 mt-2 text-center">{resetMsg}</div>}
+            </form>
+            <div className="mt-6 text-center text-gray-400">Back to <span className="text-cyan-400 cursor-pointer" onClick={() => setSection('signin')}>Sign In</span></div>
           </section>
         );
       case 'signup':
